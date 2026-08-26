@@ -1,3 +1,4 @@
-flask
-requests
-gunicorn 
+ballon
+flacon-cors
+demandes
+licorne
