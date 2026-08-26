@@ -15,11 +15,58 @@ premium_users = {}
 def init_payment():
     data = request.json
     if not data:
-        return jsonify({"error": "Données manquantes"}), 400
+        return jsonify({"error": "Donnees manquantes"}), 400
     p = data.get('pack')
     user_id = data.get('user_id', '')
     if p not in PACKS:
         return jsonify({"error": "Pack invalide"}), 400
+    try:
+        payload = {
+            'amount': PACKS[p],
+            'description': 'Acces Winia AI Football - ' + p
+        }
+        r = requests.post('http://geniuspay.ci/api/v1/merchant/payments',
+            headers={
+                'X-API-Key': PUB,
+                'X-API-Secret': SEC,
+                'Content-Type': 'application/json'
+            },
+            json=payload,
+            timeout=15
+        )
+        raw = r.json()
+
+        checkout = ''
+        reference = ''
+
+        if isinstance(raw, dict):
+            d = raw.get('data', {})
+            if isinstance(d, dict):
+                checkout = d.get('checkout_url', '') or d.get('payment_url', '')
+                reference = d.get('reference', '')
+            elif isinstance(d, list) and len(d) > 0:
+                last = d[-1]
+                if isinstance(last, dict):
+                    checkout = last.get('checkout_url', '') or last.get('payment_url', '')
+                    reference = last.get('reference', '')
+            if not checkout:
+                checkout = raw.get('checkout_url', '') or raw.get('payment_url', '')
+                reference = raw.get('reference', '') or reference
+
+        return jsonify({
+            "checkout_url": checkout,
+            "payment_url": checkout,
+            "reference": reference,
+            "success": bool(checkout)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/debug-geniuspay', methods=['POST'])
+def debug_geniuspay():
+    data = request.json or {}
+    p = data.get('pack', 'mensuel')
+    amount = PACKS.get(p, 3800)
     try:
         r = requests.post('http://geniuspay.ci/api/v1/merchant/payments',
             headers={
@@ -27,41 +74,10 @@ def init_payment():
                 'X-API-Secret': SEC,
                 'Content-Type': 'application/json'
             },
-            json={
-                'amount': PACKS[p],
-                'description': 'Acces Winia AI Football - ' + p,
-                'metadata': {'user_id': user_id, 'pack': p}
-            },
+            json={'amount': amount, 'description': 'Test Winia AI'},
             timeout=15
         )
-        resp = r.json()
-
-        # GeniusPay peut retourner un dict ou une liste
-        checkout = ''
-        reference = ''
-        success = False
-
-        if isinstance(resp, dict):
-            success = resp.get('success', False)
-            d = resp.get('data', {})
-            if isinstance(d, dict):
-                checkout = d.get('checkout_url', '') or d.get('payment_url', '')
-                reference = d.get('reference', '')
-            elif isinstance(d, list) and len(d) > 0:
-                checkout = d[0].get('checkout_url', '') or d[0].get('payment_url', '')
-                reference = d[0].get('reference', '')
-        elif isinstance(resp, list) and len(resp) > 0:
-            item = resp[0] if isinstance(resp[0], dict) else {}
-            checkout = item.get('checkout_url', '') or item.get('payment_url', '')
-            reference = item.get('reference', '')
-
-        return jsonify({
-            "payment_url": checkout,
-            "checkout_url": checkout,
-            "reference": reference,
-            "success": success,
-            "debug": resp
-        })
+        return jsonify({"status_code": r.status_code, "raw": r.json()})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -69,7 +85,7 @@ def init_payment():
 def webhook_genius():
     data = request.json
     if not data:
-        return jsonify({"error": "Données invalides"}), 400
+        return jsonify({"error": "Donnees invalides"}), 400
     event = data.get("event", "")
     transaction = data.get("data", {}).get("transaction", {})
     metadata = transaction.get("metadata", {})
