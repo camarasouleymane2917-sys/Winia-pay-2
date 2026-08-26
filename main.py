@@ -23,42 +23,27 @@ def init_payment():
     if p not in PACKS:
         return jsonify({"error": "Pack invalide"}), 400
     try:
-        # 1. Lister les refs existantes AVANT
-        r1 = requests.get(API, headers=HEADERS, timeout=10)
-        old_refs = set()
-        if r1.status_code == 200:
-            d1 = r1.json()
-            if isinstance(d1, dict) and isinstance(d1.get('data'), list):
-                for item in d1['data']:
-                    old_refs.add(item.get('reference', ''))
-
-        # 2. Creer le nouveau paiement
-        r2 = requests.post(API, headers=HEADERS,
+        r = requests.post(API, headers=HEADERS,
             json={'amount': PACKS[p], 'description': 'Acces Winia AI - ' + p},
             timeout=15)
+        resp = r.json()
 
-        # 3. Lister les refs APRES pour trouver la nouvelle
-        r3 = requests.get(API, headers=HEADERS, timeout=10)
-        new_ref = ''
-        if r3.status_code == 200:
-            d3 = r3.json()
-            if isinstance(d3, dict) and isinstance(d3.get('data'), list):
-                for item in d3['data']:
-                    ref = item.get('reference', '')
-                    if ref and ref not in old_refs:
-                        new_ref = ref
-                        break
+        ref = ''
+        # Chercher dans la reponse POST le paiement avec le plus grand ID
+        if isinstance(resp, dict):
+            d = resp.get('data', {})
+            if isinstance(d, dict):
+                ref = d.get('reference', '')
+            elif isinstance(d, list) and len(d) > 0:
+                # Trier par ID decroissant pour avoir le plus recent
+                highest = max(d, key=lambda x: x.get('id', 0) if isinstance(x, dict) else 0)
+                ref = highest.get('reference', '')
 
-        if new_ref:
-            checkout = 'http://geniuspay.ci/checkout/' + new_ref
-            return jsonify({
-                "checkout_url": checkout,
-                "payment_url": checkout,
-                "reference": new_ref,
-                "success": True
-            })
+        if ref:
+            checkout = 'http://geniuspay.ci/checkout/' + ref
+            return jsonify({"checkout_url": checkout, "reference": ref, "success": True})
         else:
-            return jsonify({"error": "Impossible de trouver la nouvelle reference", "success": False}), 500
+            return jsonify({"error": "Pas de reference", "raw": str(resp)[:300], "success": False}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
