@@ -35,15 +35,32 @@ def init_payment():
             timeout=15
         )
         resp = r.json()
+
+        # GeniusPay peut retourner un dict ou une liste
         checkout = ''
-        if resp.get('data'):
-            checkout = resp['data'].get('checkout_url', '') or resp['data'].get('payment_url', '')
+        reference = ''
+        success = False
+
+        if isinstance(resp, dict):
+            success = resp.get('success', False)
+            d = resp.get('data', {})
+            if isinstance(d, dict):
+                checkout = d.get('checkout_url', '') or d.get('payment_url', '')
+                reference = d.get('reference', '')
+            elif isinstance(d, list) and len(d) > 0:
+                checkout = d[0].get('checkout_url', '') or d[0].get('payment_url', '')
+                reference = d[0].get('reference', '')
+        elif isinstance(resp, list) and len(resp) > 0:
+            item = resp[0] if isinstance(resp[0], dict) else {}
+            checkout = item.get('checkout_url', '') or item.get('payment_url', '')
+            reference = item.get('reference', '')
+
         return jsonify({
             "payment_url": checkout,
             "checkout_url": checkout,
-            "reference": resp.get('data', {}).get('reference', ''),
-            "success": resp.get('success', False),
-            "raw": resp
+            "reference": reference,
+            "success": success,
+            "debug": resp
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
