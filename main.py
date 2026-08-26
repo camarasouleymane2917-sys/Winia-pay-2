@@ -23,27 +23,47 @@ def init_payment():
     if p not in PACKS:
         return jsonify({"error": "Pack invalide"}), 400
     try:
-        r = requests.post(API, headers=HEADERS,
+        # Creer le paiement
+        requests.post(API, headers=HEADERS,
             json={'amount': PACKS[p], 'description': 'Acces Winia AI - ' + p},
             timeout=15)
+
+        # Recuperer le dernier paiement cree (le plus recent)
+        r = requests.get(API + '?per_page=1', headers=HEADERS, timeout=10)
         resp = r.json()
 
         ref = ''
-        # Chercher dans la reponse POST le paiement avec le plus grand ID
         if isinstance(resp, dict):
-            d = resp.get('data', {})
-            if isinstance(d, dict):
+            d = resp.get('data', [])
+            if isinstance(d, list) and len(d) > 0:
+                ref = d[0].get('reference', '')
+            elif isinstance(d, dict):
                 ref = d.get('reference', '')
-            elif isinstance(d, list) and len(d) > 0:
-                # Trier par ID decroissant pour avoir le plus recent
-                highest = max(d, key=lambda x: x.get('id', 0) if isinstance(x, dict) else 0)
-                ref = highest.get('reference', '')
+
+        # Si pas trouve avec per_page, chercher le dernier page
+        if not ref:
+            r2 = requests.get(API, headers=HEADERS, timeout=10)
+            resp2 = r2.json()
+            if isinstance(resp2, dict):
+                meta = resp2.get('meta', {})
+                last_page = meta.get('last_page', 1)
+                if last_page > 1:
+                    r3 = requests.get(API + '?page=' + str(last_page), headers=HEADERS, timeout=10)
+                    resp3 = r3.json()
+                    d3 = resp3.get('data', [])
+                    if isinstance(d3, list) and len(d3) > 0:
+                        ref = d3[-1].get('reference', '')
+                else:
+                    d2 = resp2.get('data', [])
+                    if isinstance(d2, list) and len(d2) > 0:
+                        highest = max(d2, key=lambda x: x.get('id', 0))
+                        ref = highest.get('reference', '')
 
         if ref:
             checkout = 'http://geniuspay.ci/checkout/' + ref
             return jsonify({"checkout_url": checkout, "reference": ref, "success": True})
         else:
-            return jsonify({"error": "Pas de reference", "raw": str(resp)[:300], "success": False}), 500
+            return jsonify({"error": "Reference introuvable", "success": False}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
