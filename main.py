@@ -21,63 +21,41 @@ def init_payment():
     if p not in PACKS:
         return jsonify({"error": "Pack invalide"}), 400
     try:
-        payload = {
-            'amount': PACKS[p],
-            'description': 'Acces Winia AI Football - ' + p
-        }
         r = requests.post('http://geniuspay.ci/api/v1/merchant/payments',
             headers={
                 'X-API-Key': PUB,
                 'X-API-Secret': SEC,
                 'Content-Type': 'application/json'
             },
-            json=payload,
-            timeout=15
-        )
-        raw = r.json()
-
-        checkout = ''
-        reference = ''
-
-        if isinstance(raw, dict):
-            d = raw.get('data', {})
-            if isinstance(d, dict):
-                checkout = d.get('checkout_url', '') or d.get('payment_url', '')
-                reference = d.get('reference', '')
-            elif isinstance(d, list) and len(d) > 0:
-                last = d[-1]
-                if isinstance(last, dict):
-                    checkout = last.get('checkout_url', '') or last.get('payment_url', '')
-                    reference = last.get('reference', '')
-            if not checkout:
-                checkout = raw.get('checkout_url', '') or raw.get('payment_url', '')
-                reference = raw.get('reference', '') or reference
-
-        return jsonify({
-            "checkout_url": checkout,
-            "payment_url": checkout,
-            "reference": reference,
-            "success": bool(checkout)
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/debug-geniuspay', methods=['POST'])
-def debug_geniuspay():
-    data = request.json or {}
-    p = data.get('pack', 'mensuel')
-    amount = PACKS.get(p, 3800)
-    try:
-        r = requests.post('http://geniuspay.ci/api/v1/merchant/payments',
-            headers={
-                'X-API-Key': PUB,
-                'X-API-Secret': SEC,
-                'Content-Type': 'application/json'
+            json={
+                'amount': PACKS[p],
+                'description': 'Acces Winia AI Football - ' + p
             },
-            json={'amount': amount, 'description': 'Test Winia AI'},
             timeout=15
         )
-        return jsonify({"status_code": r.status_code, "raw": r.json()})
+        resp = r.json()
+        ref = ''
+        if isinstance(resp, dict):
+            d = resp.get('data', [])
+            if isinstance(d, list) and len(d) > 0:
+                ref = d[0].get('reference', '')
+            elif isinstance(d, dict):
+                ref = d.get('reference', '')
+        if not ref:
+            ref = resp.get('reference', '')
+
+        if ref:
+            checkout = 'http://geniuspay.ci/checkout/' + ref
+            if user_id:
+                premium_users[user_id + '_ref'] = ref
+            return jsonify({
+                "checkout_url": checkout,
+                "payment_url": checkout,
+                "reference": ref,
+                "success": True
+            })
+        else:
+            return jsonify({"error": "Pas de reference", "success": False}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
